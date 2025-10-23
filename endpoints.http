@@ -1,0 +1,103 @@
+### KidsCoins API - Endpoints HTTP
+### Use este arquivo no VS Code com extensão REST Client
+### ou copie os exemplos para Postman/Insomnia
+
+@baseUrl = http://localhost:8080
+@accessToken = SEU_TOKEN_AQUI
+
+### ==== AUTENTICAÇÃO (Público) ====
+
+### 1. Registrar Pai
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "pai@exemplo.com",
+  "password": "senha123",
+  "fullName": "João Silva",
+  "familyName": "Família Silva"
+}
+
+### 2. Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "pai@exemplo.com",
+  "password": "senha123"
+}
+
+### 3. Refresh Token
+POST {{baseUrl}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "uuid-do-refresh-token"
+}
+
+### ==== USUÁRIOS (Requer Autenticação) ====
+
+### 4. Buscar Usuário Logado
+GET {{baseUrl}}/api/users/me
+Authorization: Bearer {{accessToken}}
+
+### 5. Criar Criança (apenas PARENT)
+POST {{baseUrl}}/api/users/children
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "fullName": "Maria Silva",
+  "age": 8,
+  "pin": "1234",
+  "avatarUrl": "https://i.pravatar.cc/150?img=1"
+}
+
+### 6. Listar Crianças da Família (apenas PARENT)
+GET {{baseUrl}}/api/users/children
+Authorization: Bearer {{accessToken}}
+
+### ==== TESTES DE VALIDAÇÃO ====
+
+### Email Inválido
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "email-invalido",
+  "password": "senha123",
+  "fullName": "João Silva",
+  "familyName": "Família Silva"
+}
+
+### Senha Curta
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "teste@exemplo.com",
+  "password": "123",
+  "fullName": "João Silva",
+  "familyName": "Família Silva"
+}
+
+### Credenciais Inválidas
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "pai@exemplo.com",
+  "password": "senha-errada"
+}
+
+### PIN Inválido (menos de 4 dígitos)
+POST {{baseUrl}}/api/users/children
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "fullName": "Pedro Silva",
+  "age": 10,
+  "pin": "12",
+  "avatarUrl": null
+}
