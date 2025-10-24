@@ -31,4 +31,12 @@ public interface TaskAssignmentRepository extends JpaRepository<TaskAssignment, 
         UUID childId,
         AssignmentStatus status
     );
+
+    // Buscar tarefas aprovadas em um período (para streak)
+    List<TaskAssignment> findByAssignedToChildIdAndStatusAndApprovedAtBetween(
+        UUID childId,
+        AssignmentStatus status,
+        LocalDateTime start,
+        LocalDateTime end
+    );
 }
