@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreatedDate;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -46,7 +45,6 @@ public class TaskAssignment {
     @Column(length = 500)
     private String rejectionReason;
 
-    @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreatedDate;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -33,7 +32,6 @@ public class Redemption {
     @Column(nullable = false)
     private RedemptionStatus status;
 
-    @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime requestedAt;
 

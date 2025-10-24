@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreatedDate;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -40,7 +39,6 @@ public class Badge {
     @Column(nullable = false)
     private Integer xpBonus; // XP bônus ao desbloquear
 
-    @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
