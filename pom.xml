@@ -82,6 +82,12 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Jackson Hibernate Module - Previne LazyInitializationException na serialização JSON -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-hibernate5-jakarta</artifactId>
+        </dependency>
+
         <!-- DevTools -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

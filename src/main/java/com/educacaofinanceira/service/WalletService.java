@@ -109,8 +109,10 @@ public class WalletService {
      * Busca a carteira de uma criança
      * Valida acesso: pai da família ou própria criança
      */
+    @Transactional(readOnly = true)
     public WalletResponse getWallet(UUID childId, User requestingUser) {
-        Wallet wallet = walletRepository.findByChildId(childId)
+        // USA JOIN FETCH para evitar LazyInitializationException ao acessar wallet.getChild()
+        Wallet wallet = walletRepository.findByChildIdWithChild(childId)
                 .orElseThrow(() -> new ResourceNotFoundException("Carteira não encontrada"));
 
         // Validar acesso
@@ -123,9 +125,11 @@ public class WalletService {
      * Busca o histórico de transações de uma criança
      * Com paginação
      */
+    @Transactional(readOnly = true)
     public List<TransactionResponse> getTransactions(UUID childId, User requestingUser,
                                                      Integer limit, Integer offset) {
-        Wallet wallet = walletRepository.findByChildId(childId)
+        // USA JOIN FETCH para evitar LazyInitializationException ao acessar wallet.getChild()
+        Wallet wallet = walletRepository.findByChildIdWithChild(childId)
                 .orElseThrow(() -> new ResourceNotFoundException("Carteira não encontrada"));
 
         // Validar acesso

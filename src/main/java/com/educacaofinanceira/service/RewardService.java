@@ -42,6 +42,10 @@ public class RewardService {
         reward.setImageUrl(request.getImageUrl());
         reward = rewardRepository.save(reward);
 
+        // Forçar carregamento do relacionamento lazy dentro da transação
+        reward.getCreatedBy().getFullName();
+        reward.getFamily().getId();
+
         return RewardResponse.fromReward(reward);
     }
 
@@ -50,15 +54,16 @@ public class RewardService {
      * - PARENT: todas as recompensas
      * - CHILD: apenas recompensas ativas
      */
+    @Transactional(readOnly = true)
     public List<RewardResponse> getRewards(User user, Boolean activeOnly) {
         List<Reward> rewards;
 
         if (user.getRole() == UserRole.PARENT && !activeOnly) {
-            // Pai pode ver todas
-            rewards = rewardRepository.findByFamilyId(user.getFamily().getId());
+            // Pai pode ver todas (usa JOIN FETCH para carregar relacionamentos)
+            rewards = rewardRepository.findByFamilyIdWithRelations(user.getFamily().getId());
         } else {
-            // Criança ou pai filtrando, vê apenas ativas
-            rewards = rewardRepository.findByFamilyIdAndIsActive(
+            // Criança ou pai filtrando, vê apenas ativas (usa JOIN FETCH)
+            rewards = rewardRepository.findByFamilyIdAndIsActiveWithRelations(
                     user.getFamily().getId(), true);
         }
 
@@ -84,6 +89,10 @@ public class RewardService {
         // Toggle status
         reward.setIsActive(!reward.getIsActive());
         reward = rewardRepository.save(reward);
+
+        // Forçar carregamento do relacionamento lazy dentro da transação
+        reward.getCreatedBy().getFullName();
+        reward.getFamily().getId();
 
         return RewardResponse.fromReward(reward);
     }

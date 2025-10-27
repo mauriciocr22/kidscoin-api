@@ -68,8 +68,9 @@ public class AuthService {
     @Transactional
     public AuthResponse login(LoginRequest request) {
         // Busca usuário por email ou username
-        User user = userRepository.findByEmail(request.getEmailOrUsername())
-                .orElseGet(() -> userRepository.findByUsername(request.getEmailOrUsername())
+        // USA MÉTODOS COM JOIN FETCH para evitar LazyInitializationException
+        User user = userRepository.findByEmailWithFamily(request.getEmailOrUsername())
+                .orElseGet(() -> userRepository.findByUsernameWithFamily(request.getEmailOrUsername())
                         .orElseThrow(() -> new UnauthorizedException("Credenciais inválidas")));
 
         // Valida senha/PIN

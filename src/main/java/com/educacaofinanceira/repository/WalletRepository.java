@@ -14,7 +14,18 @@ import java.util.UUID;
 @Repository
 public interface WalletRepository extends JpaRepository<Wallet, UUID> {
 
+    /**
+     * Busca carteira por ID da criança
+     * SEM JOIN FETCH - use findByChildIdWithChild() se precisar acessar child
+     */
     Optional<Wallet> findByChildId(UUID childId);
+
+    /**
+     * Busca carteira com JOIN FETCH do child
+     * Evita LazyInitializationException ao acessar wallet.getChild()
+     */
+    @Query("SELECT w FROM Wallet w JOIN FETCH w.child WHERE w.child.id = :childId")
+    Optional<Wallet> findByChildIdWithChild(@Param("childId") UUID childId);
 
     // Lock pessimista para evitar concorrência
     @Lock(LockModeType.PESSIMISTIC_WRITE)
