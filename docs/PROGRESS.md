@@ -891,6 +891,712 @@ mvn spring-boot:run
 
 ---
 
-**Última atualização:** 24/10/2025 - Sessão de Verificação e Correção
-**Status:** ✅ **Parte 1 e Parte 2 100% COMPLETAS**
-**Prioridade atual:** Configurar PostgreSQL e testar aplicação completa
+## 🔧 SESSÃO DE CORREÇÃO - 25/10/2025
+
+### ✅ Correção do Sistema de Username para Crianças
+
+#### Problema Identificado
+Após implementar o sistema de username para crianças (removendo a necessidade de email com sufixo @child.local), a aplicação apresentava erro ao criar criança:
+
+```
+ERROR: null value in column 'email' of relation 'users' violates not-null constraint
+```
+
+#### Causa Raiz
+1. **Código Java**: Já estava correto - `CreateChildRequest` usava `username`, `UserService.createChild()` não setava email
+2. **Banco de Dados**: Tabela `users` tinha constraint `NOT NULL` na coluna `email` de quando foi criada inicialmente
+3. **Hibernate ddl-auto: update**: Não remove constraints existentes, apenas adiciona novas colunas
+
+#### Solução Aplicada
+
+**1. Atualização da Entidade User** (`src/main/java/com/educacaofinanceira/model/User.java`)
+```java
+@Column(unique = true, length = 100, nullable = true)
+private String email; // Apenas para PARENT (nullable pois CHILD não usa email)
+
+@Column(unique = true, length = 50, nullable = true)
+private String username; // Apenas para CHILD (nullable pois PARENT não usa username)
+```
+
+**2. Script SQL de Migração** (`src/main/resources/fix_email_nullable.sql`)
+```sql
+-- Alterar coluna email para aceitar NULL
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+
+-- Alterar coluna username para aceitar NULL
+ALTER TABLE users ALTER COLUMN username DROP NOT NULL;
+```
+
+**3. Execução da Migração**
+```bash
+psql -U postgres -d educacao_financeira -c "ALTER TABLE users ALTER COLUMN email DROP NOT NULL; ALTER TABLE users ALTER COLUMN username DROP NOT NULL;"
+```
+
+#### Resultado
+✅ Crianças podem ser criadas com apenas `username` (sem email)
+✅ Login de PARENT funciona com `emailOrUsername` = email
+✅ Login de CHILD funciona com `emailOrUsername` = username
+✅ Sistema totalmente funcional
+
+#### Arquivos Modificados
+- `src/main/java/com/educacaofinanceira/model/User.java` - Adicionado `nullable = true` para email e username
+- `src/main/resources/fix_email_nullable.sql` - Criado script de migração
+- `docs/PROGRESS.md` - Documentação atualizada
+
+#### Exemplo de Uso
+
+**Criar criança:**
+```json
+POST /api/users/children
+{
+  "fullName": "João Silva",
+  "username": "joaozinho",
+  "age": 8,
+  "pin": "1234",
+  "avatarUrl": "https://example.com/avatar.png"
+}
+```
+
+**Login criança:**
+```json
+POST /api/auth/login
+{
+  "emailOrUsername": "joaozinho",
+  "password": "1234"
+}
+```
+
+**Login pai:**
+```json
+POST /api/auth/login
+{
+  "emailOrUsername": "pai@example.com",
+  "password": "senha123"
+}
+```
+
+---
+
+## 🔧 SESSÃO DE CORREÇÃO - 25/10/2025 (Parte 2)
+
+### ✅ Correção de Bugs Críticos no Sistema de Tarefas
+
+Após integração com o frontend, foram identificados e corrigidos 4 bugs críticos que impediam o funcionamento completo do sistema de tarefas.
+
+---
+
+#### Bug #1: Tarefas Não Apareciam na Lista
+
+**Problema Identificado:**
+Ao criar uma tarefa no painel do pai, ela não aparecia na lista de tarefas (nem para o pai, nem para a criança).
+
+**Causa Raiz:**
+No método `TaskService.getTasks()` (linha 100), o código estava buscando assignments com status null:
+```java
+List<TaskAssignment> taskAssignments = taskAssignmentRepository.findByStatus(null);
+```
+Isso retornava lista vazia, pois nenhum assignment tem status null (o padrão é `PENDING`).
+
+**Solução Aplicada:**
+
+1. **Criado novo método no `TaskAssignmentRepository`:**
+```java
+List<TaskAssignment> findByTaskId(UUID taskId);
+```
+
+2. **Corrigido a lógica no `TaskService.getTasks()`:**
+```java
+for (Task task : familyTasks) {
+    List<TaskAssignment> taskAssignments = taskAssignmentRepository.findByTaskId(task.getId());
+    assignments.addAll(taskAssignments);
+}
+```
+
+**Arquivos Modificados:**
+- `src/main/java/com/educacaofinanceira/repository/TaskAssignmentRepository.java` - Adicionado método `findByTaskId()`
+- `src/main/java/com/educacaofinanceira/service/TaskService.java` - Corrigido loop de busca de assignments
+
+---
+
+#### Bug #2: Erro 500 ao Listar Tarefas (Lazy Loading)
+
+**Problema Identificado:**
+Erro HTTP 500 ao carregar tarefas:
+```
+could not initialize proxy [com.educacaofinanceira.model.Task#...] - no Session
+```
+
+**Causa Raiz:**
+O método `TaskService.getTasks()` não tinha `@Transactional`, causando erro de lazy loading ao converter entidades para DTOs. As entidades `Task`, `TaskAssignment` e `User` têm relacionamentos LAZY (`Family`, `User`, etc.) que eram acessados fora da transação.
+
+**Relacionamentos Lazy Identificados:**
+- `Task.family` (FetchType.LAZY)
+- `Task.createdBy` (FetchType.LAZY)
+- `TaskAssignment.task` (FetchType.LAZY)
+- `TaskAssignment.assignedToChild` (FetchType.LAZY)
+- `TaskAssignment.approvedBy` (FetchType.LAZY)
+
+**Solução Aplicada:**
+
+Adicionado `@Transactional(readOnly = true)` no método `TaskService.getTasks()`:
+```java
+@Transactional(readOnly = true)
+public List<TaskAssignmentResponse> getTasks(User user) {
+    // ... código de busca e conversão para DTO
+}
+```
+
+Com a transação ativa, o Hibernate pode carregar relacionamentos lazy durante a conversão para DTO.
+
+**Arquivos Modificados:**
+- `src/main/java/com/educacaofinanceira/service/TaskService.java` - Adicionado `@Transactional(readOnly = true)`
+
+---
+
+#### Bug #3: Username Não Aparecia no Frontend
+
+**Problema Identificado:**
+Na aba de crianças cadastradas do painel do pai, o username vinha como `undefined`, impossibilitando a exibição abaixo do nome.
+
+**Causa Raiz:**
+O DTO `UserResponse` não incluía o campo `username`, enviando apenas `email`, `fullName`, `role`, etc.
+
+**Solução Aplicada:**
+
+1. **Adicionado campo `username` no `UserResponse`:**
+```java
+private String username;
+```
+
+2. **Atualizado método `fromUser()` para incluir username:**
+```java
+response.setUsername(user.getUsername());
+```
+
+**Estrutura do UserResponse Atualizada:**
+```json
+{
+  "id": "uuid",
+  "email": "pai@example.com",        // null para CHILD
+  "username": "joaozinho",            // null para PARENT
+  "fullName": "João Silva",
+  "role": "CHILD",
+  "familyId": "uuid",
+  "avatarUrl": "https://..."
+}
+```
+
+**Arquivos Modificados:**
+- `src/main/java/com/educacaofinanceira/dto/response/UserResponse.java` - Adicionado campo `username` e mapeamento
+
+---
+
+#### Bug #4: Criança Não Conseguia Acessar Suas Tarefas
+
+**Problema Identificado:**
+Ao abrir a tela de tarefas no perfil da criança, não aparecia nenhuma tarefa e o console mostrava:
+```
+ResourceNotFoundException: Usuário não encontrado
+```
+
+**Causa Raiz:**
+O `SecurityHelper.getAuthenticatedUser()` buscava usuário **APENAS por email**:
+```java
+String email = SecurityContextHolder.getContext().getAuthentication().getName();
+return userRepository.findByEmail(email)
+    .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado"));
+```
+
+Quando a criança fazia login com username, o JWT continha o username, mas o SecurityHelper tentava buscar por email e falhava.
+
+**Problema Adicional:**
+O `User` retornado não estava em uma transação, causando lazy loading error ao acessar `user.getFamily()` no `TaskService.getTasks()`.
+
+**Solução Aplicada:**
+
+1. **Corrigido busca para email OU username:**
+```java
+String emailOrUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+return userRepository.findByEmail(emailOrUsername)
+        .orElseGet(() -> userRepository.findByUsername(emailOrUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado")));
+```
+
+2. **Adicionado `@Transactional(readOnly = true)`:**
+```java
+@Transactional(readOnly = true)
+public User getAuthenticatedUser() {
+    // ... código de busca
+}
+```
+
+Isso garante que o relacionamento `Family` (lazy) pode ser carregado quando necessário.
+
+**Arquivos Modificados:**
+- `src/main/java/com/educacaofinanceira/util/SecurityHelper.java` - Corrigido busca e adicionado transação
+
+---
+
+### 📊 Resumo das Correções
+
+| Bug | Componente | Tipo | Severidade |
+|-----|-----------|------|------------|
+| #1 | TaskService.getTasks() | Lógica incorreta | 🔴 Crítico |
+| #2 | TaskService.getTasks() | Lazy Loading | 🔴 Crítico |
+| #3 | UserResponse | DTO incompleto | 🟡 Médio |
+| #4 | SecurityHelper | Autenticação | 🔴 Crítico |
+
+### 📁 Arquivos Modificados (4 arquivos)
+
+1. `TaskAssignmentRepository.java` - Adicionado método `findByTaskId(UUID taskId)`
+2. `TaskService.java` - Corrigido lógica de busca + adicionado `@Transactional(readOnly = true)`
+3. `UserResponse.java` - Adicionado campo `username`
+4. `SecurityHelper.java` - Corrigido busca por email/username + adicionado `@Transactional(readOnly = true)`
+
+### ✅ Resultado Final
+
+Após as correções:
+- ✅ Tarefas criadas pelo pai aparecem na lista
+- ✅ Tarefas aparecem no painel da criança
+- ✅ Sem mais erros 500 de lazy loading
+- ✅ Username da criança exibido corretamente no frontend
+- ✅ Autenticação funcionando para PARENT (email) e CHILD (username)
+
+### 🧪 Fluxo de Teste Completo
+
+**1. Login como PAI:**
+```json
+POST /api/auth/login
+{"emailOrUsername": "pai@example.com", "password": "senha123"}
+```
+
+**2. Criar criança:**
+```json
+POST /api/users/children
+{"fullName": "João", "username": "joaozinho", "age": 8, "pin": "1234"}
+```
+
+**3. Criar tarefa:**
+```json
+POST /api/tasks
+{"title": "Arrumar quarto", "coinValue": 50, "xpValue": 100, "category": "LIMPEZA", "childrenIds": ["uuid"]}
+```
+
+**4. Listar tarefas (como PAI):**
+```
+GET /api/tasks → Retorna todas assignments da família
+```
+
+**5. Login como CRIANÇA:**
+```json
+POST /api/auth/login
+{"emailOrUsername": "joaozinho", "password": "1234"}
+```
+
+**6. Listar tarefas (como CRIANÇA):**
+```
+GET /api/tasks → Retorna apenas assignments da criança
+```
+
+**7. Completar tarefa:**
+```
+POST /api/tasks/{assignmentId}/complete
+```
+
+**8. Aprovar tarefa (como PAI):**
+```
+POST /api/tasks/{assignmentId}/approve
+→ Credita moedas, XP, verifica badges, envia notificações
+```
+
+---
+
+## 🔧 SESSÃO DE MELHORIAS - 26/10/2025
+
+### ✅ Implementação de Endpoints de Exclusão
+
+Após integração com o mobile, foram implementados 2 novos endpoints de exclusão para melhorar a gestão de dados.
+
+---
+
+#### Feature #1: Exclusão de Tarefa Atribuída
+
+**Problema Identificado:**
+O mobile tinha um botão para excluir tarefas, mas ao tentar excluir, recebia erro 404:
+```
+No static resource api/tasks/{id}
+```
+
+**Causa Raiz:**
+Não existia endpoint `DELETE` no `TaskController`.
+
+**Solução Implementada:**
+
+1. **Criado método `TaskService.deleteTaskAssignment()`** (linha 244-275)
+   ```java
+   @Transactional
+   public void deleteTaskAssignment(UUID assignmentId, User parent)
+   ```
+
+   **Validações:**
+   - ✅ Apenas PARENT da mesma família pode excluir
+   - ✅ Só permite excluir tarefas com status `PENDING` ou `REJECTED`
+   - ❌ Bloqueia exclusão de tarefas `APPROVED` (já creditaram moedas/XP)
+   - ❌ Bloqueia exclusão de tarefas `COMPLETED` (aguardando aprovação)
+   - 🔔 Notifica criança sobre a remoção da tarefa
+
+2. **Adicionado endpoint no `TaskController`** (linha 85-90)
+   ```
+   DELETE /api/tasks/{assignmentId}
+   ```
+
+   **Respostas:**
+   - `204 No Content` - Exclusão bem-sucedida
+   - `404 Not Found` - Tarefa não encontrada
+   - `403 Forbidden` - Sem permissão
+   - `400 Bad Request` - Status não permite exclusão
+
+**Arquivos Modificados:**
+- `src/main/java/com/educacaofinanceira/service/TaskService.java` - Adicionado método `deleteTaskAssignment()`
+- `src/main/java/com/educacaofinanceira/controller/TaskController.java` - Adicionado endpoint `@DeleteMapping`
+
+---
+
+#### Feature #2: Exclusão de Criança Cadastrada
+
+**Necessidade:**
+Permitir que pais removam perfis de crianças cadastradas, incluindo todos os dados relacionados.
+
+**Solução Implementada:**
+
+1. **Criado método `UserService.deleteChild()`** (linha 113-179)
+   ```java
+   @Transactional
+   public void deleteChild(UUID childId)
+   ```
+
+   **Exclusão em cascata (ordem reversa de dependências):**
+   1. ✅ **RefreshTokens** - Tokens JWT da criança
+   2. ✅ **Notifications** - Todas as notificações
+   3. ✅ **UserBadges** - Conquistas desbloqueadas
+   4. ✅ **Redemptions** - Resgates de recompensas
+   5. ✅ **TaskAssignments** - Tarefas atribuídas (todos os status)
+   6. ✅ **Transactions** - Histórico financeiro
+   7. ✅ **Wallet** - Carteira digital
+   8. ✅ **Savings** - Poupança
+   9. ✅ **UserXP** - Gamificação (nível e XP)
+   10. ✅ **User** - Perfil da criança
+
+   **Validações de segurança:**
+   - ❌ Apenas PARENT pode deletar crianças
+   - ❌ Só pode deletar crianças da própria família
+   - ❌ Não pode deletar usuários do tipo PARENT
+
+2. **Adicionado endpoint no `UserController`** (linha 44-48)
+   ```
+   DELETE /api/users/children/{childId}
+   ```
+
+   **Respostas:**
+   - `204 No Content` - Exclusão bem-sucedida
+   - `404 Not Found` - Criança não encontrada
+   - `403 Forbidden` - Sem permissão
+   - `400 Bad Request` - Tentativa de deletar PARENT
+
+**Arquivos Modificados:**
+- `src/main/java/com/educacaofinanceira/service/UserService.java` - Adicionado método `deleteChild()` + 6 repositories
+- `src/main/java/com/educacaofinanceira/controller/UserController.java` - Adicionado endpoint `@DeleteMapping`
+
+---
+
+### 📊 Resumo das Melhorias
+
+| Feature | Endpoint | Método | Status |
+|---------|----------|--------|--------|
+| Excluir tarefa atribuída | `/api/tasks/{assignmentId}` | DELETE | ✅ Implementado |
+| Excluir criança | `/api/users/children/{childId}` | DELETE | ✅ Implementado |
+
+### 📁 Arquivos Modificados (4 arquivos)
+
+1. `TaskService.java` - Adicionado método `deleteTaskAssignment()`
+2. `TaskController.java` - Adicionado endpoint `DELETE /api/tasks/{id}`
+3. `UserService.java` - Adicionado método `deleteChild()` + repositories
+4. `UserController.java` - Adicionado endpoint `DELETE /api/users/children/{id}`
+
+### ⚠️ Notas Importantes
+
+**Exclusão de Tarefas:**
+- Tarefas aprovadas **NÃO** podem ser deletadas (histórico protegido)
+- Tarefas em aprovação **NÃO** podem ser deletadas (aguardando revisão do pai)
+- Apenas tarefas pendentes ou rejeitadas podem ser removidas
+
+**Exclusão de Crianças:**
+- ⚠️ **ATENÇÃO:** Exclusão permanente - TODOS os dados são removidos
+- ⚠️ Histórico de tarefas, saldo, conquistas, progresso - TUDO será perdido
+- ⚠️ Operação irreversível - não há backup automático
+
+### ✅ Resultado Final
+
+- ✅ Endpoint de exclusão de tarefas funcionando
+- ✅ Endpoint de exclusão de crianças funcionando
+- ✅ Validações de segurança implementadas
+- ✅ Exclusão em cascata de todas dependências
+- ✅ Notificações enviadas quando apropriado
+- ✅ Compilação sem erros
+
+---
+
+## 🔧 CORREÇÃO DE BUGS - 26/10/2025 (Parte 2)
+
+### ✅ Correção Completa de LazyInitializationException
+
+**Problema Identificado:**
+Erro recorrente ao acessar endpoints do mobile (loja de recompensas, carteira):
+```
+LazyInitializationException: could not initialize proxy [User#...] - no Session
+```
+
+**Causa Raiz:**
+Múltiplos métodos nos repositories buscavam entidades **sem JOIN FETCH**, deixando relacionamentos como **proxies lazy**. Quando o Jackson tentava serializar para JSON **fora da transação**, ocorria o erro.
+
+**Locais onde ocorria o erro:**
+1. `UserService.getCurrentUser()` - usado por `/api/users/me`
+2. `AuthService.login()` - usado por `/api/auth/login`
+3. `RewardService.getRewards()` - usado por `/api/rewards`
+4. `WalletService.getWallet()` - usado por `/api/wallet` ← **Principal culpado**
+5. `WalletService.getTransactions()` - usado por `/api/wallet/transactions`
+
+---
+
+### 🔧 Solução Implementada
+
+**Estratégia:** Implementar **JOIN FETCH** em todas as queries que precisam acessar relacionamentos lazy.
+
+#### 1. **UserRepository** - JOIN FETCH do Family
+```java
+@Query("SELECT u FROM User u JOIN FETCH u.family WHERE u.email = :email")
+Optional<User> findByEmailWithFamily(@Param("email") String email);
+
+@Query("SELECT u FROM User u JOIN FETCH u.family WHERE u.username = :username")
+Optional<User> findByUsernameWithFamily(@Param("username") String username);
+```
+
+#### 2. **RewardRepository** - JOIN FETCH em cascata
+```java
+@Query("SELECT r FROM Reward r " +
+       "JOIN FETCH r.family " +
+       "JOIN FETCH r.createdBy cb " +
+       "JOIN FETCH cb.family " +  // ← Cascata para carregar family do createdBy
+       "WHERE r.family.id = :familyId AND r.isActive = :isActive")
+List<Reward> findByFamilyIdAndIsActiveWithRelations(...);
+```
+
+#### 3. **WalletRepository** - JOIN FETCH do Child
+```java
+@Query("SELECT w FROM Wallet w JOIN FETCH w.child WHERE w.child.id = :childId")
+Optional<Wallet> findByChildIdWithChild(@Param("childId") UUID childId);
+```
+
+#### 4. **JacksonConfig** - Proteção adicional
+Configuração global do Jackson para **não** tentar carregar proxies lazy durante serialização:
+```java
+Hibernate5JakartaModule hibernateModule = new Hibernate5JakartaModule();
+hibernateModule.configure(Feature.FORCE_LAZY_LOADING, false);
+```
+
+---
+
+### 📁 Arquivos Modificados (10 arquivos)
+
+| Arquivo | Mudança |
+|---------|---------|
+| `UserRepository.java` | +2 métodos com JOIN FETCH (email/username + family) |
+| `RewardRepository.java` | +2 métodos com JOIN FETCH em cascata |
+| `WalletRepository.java` | +1 método com JOIN FETCH (child) |
+| `SecurityHelper.java` | Usa findBy...WithFamily() |
+| `UserService.java` | Usa findBy...WithFamily() em getAuthenticatedUser() |
+| `AuthService.java` | Usa findBy...WithFamily() em login() |
+| `RewardService.java` | Usa find...WithRelations() |
+| `WalletService.java` | Usa findByChildIdWithChild() em 2 métodos |
+| `JacksonConfig.java` | **CRIADO** - Configuração Jackson Hibernate |
+| `pom.xml` | +dependência jackson-datatype-hibernate5-jakarta |
+
+---
+
+### ✅ Resultado Final
+
+- ✅ `/api/users/me` - Funciona sem erro
+- ✅ `/api/auth/login` - Funciona sem erro
+- ✅ `/api/rewards` - Lista recompensas sem erro
+- ✅ `/api/wallet` - Retorna carteira sem erro ← **Problema principal resolvido**
+- ✅ `/api/wallet/transactions` - Lista transações sem erro
+- ✅ Loja de recompensas no mobile - **100% funcional**
+
+**Impacto:** Todos os endpoints que retornam DTOs com relacionamentos lazy agora funcionam corretamente.
+
+---
+
+## 🔧 NOVAS FEATURES - 27/10/2025
+
+### ✅ Feature #1: Endpoint de Retry para Tarefas Rejeitadas
+
+**Objetivo:** Permitir que crianças tentem novamente completar tarefas que foram rejeitadas pelo pai.
+
+**Implementação:**
+
+**1. TaskService.retryTask()** (TaskService.java:244-267)
+```java
+@Transactional
+public TaskAssignmentResponse retryTask(UUID assignmentId, User child)
+```
+
+**Lógica:**
+- ✅ Valida que é a criança dona da tarefa
+- ✅ Valida que status atual é `REJECTED`
+- ✅ Reseta status para `PENDING`
+- ✅ Limpa campos: `completedAt`, `approvedAt`, `approvedBy`, `rejectionReason`
+
+**2. Endpoint criado:**
+```
+PUT /api/tasks/assignments/{assignmentId}/retry
+```
+
+**Arquivos modificados:**
+- `TaskService.java` - Método `retryTask()`
+- `TaskController.java` - Endpoint `@PutMapping`
+
+---
+
+### ✅ Feature #2: Sistema de Tarefas Recorrentes
+
+**Objetivo:** Pais podem criar tarefas que se repetem automaticamente (diárias ou em dias específicos da semana).
+
+#### Novos Componentes
+
+**1. RecurrenceType.java** - Enum
+```java
+DAILY,   // Todos os dias
+WEEKLY   // Dias específicos (MON, TUE, WED, etc)
+```
+
+**2. Task.java** - Novos campos
+```java
+private Boolean isRecurring;
+private RecurrenceType recurrenceType;
+private String recurrenceDays;  // "MON,WED,FRI"
+private LocalDate recurrenceEndDate;  // Opcional
+```
+
+**3. RecurringTaskScheduler.java** - Job agendado
+- Roda diariamente à meia-noite (`@Scheduled(cron = "0 0 0 * * *")`)
+- Busca tarefas recorrentes ativas
+- Verifica se hoje é dia configurado (DAILY sempre sim, WEEKLY verifica dias)
+- Para cada criança, cria `TaskAssignment` se não existir PENDING/COMPLETED do dia
+- Notifica criança automaticamente
+
+**4. Queries customizadas:**
+- `TaskRepository.findActiveRecurringTasks()` - Busca tarefas recorrentes válidas
+- `TaskAssignmentRepository.existsActiveAssignmentForTaskAndChildToday()` - Previne duplicatas
+
+#### Exemplo de Uso
+
+**Criar tarefa recorrente (segunda a sexta):**
+```json
+POST /api/tasks
+{
+  "title": "Arrumar a cama",
+  "coinValue": 10,
+  "xpValue": 20,
+  "category": "LIMPEZA",
+  "childrenIds": ["uuid"],
+  "isRecurring": true,
+  "recurrenceType": "WEEKLY",
+  "recurrenceDays": "MON,TUE,WED,THU,FRI",
+  "recurrenceEndDate": null  // Sempre ativa
+}
+```
+
+**Comportamento:**
+- Backend cria tarefa "template"
+- Todo dia às 00:00, job verifica e cria novos assignments automaticamente
+- Crianças recebem notificação da nova tarefa
+- Não cria duplicatas (valida antes de inserir)
+
+#### Arquivos Criados/Modificados
+
+**Novos (4):**
+- `RecurrenceType.java` - Enum
+- `RecurringTaskScheduler.java` - Job agendado
+- `MIGRATE_RECURRING_TASKS.sql` - Script de migração
+- `TAREFAS_RECORRENTES.md` - Documentação completa
+
+**Modificados (6):**
+- `Task.java` - 4 campos de recorrência
+- `CreateTaskRequest.java` - DTOs de entrada
+- `TaskResponse.java` - DTOs de saída
+- `TaskService.java` - Salva configuração ao criar tarefa
+- `TaskRepository.java` - Query `findActiveRecurringTasks()`
+- `TaskAssignmentRepository.java` - Query anti-duplicata
+
+---
+
+### ⚠️ Erro Encontrado e Resolvido
+
+**Problema:** Após implementar, API retornava erro 500 ao acessar qualquer endpoint:
+```
+ERRO: column t1_0.is_recurring does not exist
+```
+
+**Causa:** Novas colunas foram adicionadas ao modelo Java, mas não existiam no banco de dados PostgreSQL.
+
+**Solução:**
+1. Criado script `MIGRATE_RECURRING_TASKS.sql` com ALTER TABLE
+2. Executado manualmente no PostgreSQL via cliente SQL
+3. Aplicação reiniciada
+
+**Colunas adicionadas:**
+```sql
+ALTER TABLE tasks ADD COLUMN is_recurring BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE tasks ADD COLUMN recurrence_type VARCHAR(50);
+ALTER TABLE tasks ADD COLUMN recurrence_days VARCHAR(100);
+ALTER TABLE tasks ADD COLUMN recurrence_end_date DATE;
+```
+
+**Nota:** O Hibernate com `ddl-auto: update` não adiciona colunas automaticamente em tabelas existentes quando o servidor já está rodando. É necessário aplicar migrations manualmente ou reiniciar com banco vazio.
+
+---
+
+### 📊 Estatísticas da Sessão
+
+**Arquivos novos:** 4
+**Arquivos modificados:** 8
+**Total compilado:** 94 arquivos Java
+**Build status:** ✅ SUCCESS
+**Features funcionais:** 2 (retry + recorrência)
+
+---
+
+### ✅ Resultado Final
+
+**Endpoint de Retry:**
+- ✅ `PUT /api/tasks/assignments/{id}/retry` funcionando
+- ✅ Crianças podem tentar novamente tarefas rejeitadas
+- ✅ Campos resetados corretamente
+
+**Tarefas Recorrentes:**
+- ✅ Job agendado configurado (meia-noite diária)
+- ✅ Criação automática de assignments
+- ✅ Suporte a DAILY e WEEKLY (dias específicos)
+- ✅ Data de término opcional
+- ✅ Anti-duplicatas funcionando
+- ✅ Notificações automáticas
+
+**Sistema completo:** Mobile pode criar tarefas recorrentes e crianças podem dar retry em tarefas rejeitadas.
+
+---
+
+**Última atualização:** 27/10/2025 - Tarefas Recorrentes + Endpoint Retry
+**Status:** ✅ **Sistema 100% FUNCIONAL**
+**Compilação:** 94 arquivos | BUILD SUCCESS
+**Próximas features:** Aguardando requisitos do frontend
