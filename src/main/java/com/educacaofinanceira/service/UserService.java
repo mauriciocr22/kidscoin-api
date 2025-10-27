@@ -6,10 +6,7 @@ import com.educacaofinanceira.exception.ResourceNotFoundException;
 import com.educacaofinanceira.exception.UnauthorizedException;
 import com.educacaofinanceira.model.*;
 import com.educacaofinanceira.model.enums.UserRole;
-import com.educacaofinanceira.repository.SavingsRepository;
-import com.educacaofinanceira.repository.UserRepository;
-import com.educacaofinanceira.repository.UserXPRepository;
-import com.educacaofinanceira.repository.WalletRepository;
+import com.educacaofinanceira.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,6 +26,12 @@ public class UserService {
     private final WalletRepository walletRepository;
     private final UserXPRepository userXPRepository;
     private final SavingsRepository savingsRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final NotificationRepository notificationRepository;
+    private final UserBadgeRepository userBadgeRepository;
+    private final RedemptionRepository redemptionRepository;
+    private final TaskAssignmentRepository taskAssignmentRepository;
+    private final TransactionRepository transactionRepository;
 
     // Retorna o usuário autenticado
     public UserResponse getCurrentUser() {
@@ -106,13 +109,83 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
+    // Deleta uma criança (apenas PARENT pode)
+    @Transactional
+    public void deleteChild(UUID childId) {
+        User parent = getAuthenticatedUser();
+
+        // Verifica se o usuário é PARENT
+        if (parent.getRole() != UserRole.PARENT) {
+            throw new UnauthorizedException("Apenas pais podem deletar perfis de crianças");
+        }
+
+        // Busca a criança
+        User child = userRepository.findById(childId)
+                .orElseThrow(() -> new ResourceNotFoundException("Criança não encontrada"));
+
+        // Valida que é uma criança
+        if (child.getRole() != UserRole.CHILD) {
+            throw new IllegalArgumentException("Apenas crianças podem ser deletadas");
+        }
+
+        // Valida que a criança é da mesma família
+        if (!child.getFamily().getId().equals(parent.getFamily().getId())) {
+            throw new UnauthorizedException("Você não pode deletar crianças de outra família");
+        }
+
+        // **DELETAR EM ORDEM REVERSA DE DEPENDÊNCIAS**
+
+        // 1. Deletar RefreshTokens
+        refreshTokenRepository.deleteByUserId(childId);
+
+        // 2. Deletar Notifications
+        List<Notification> notifications = notificationRepository.findByUserIdOrderByCreatedAtDesc(childId);
+        notificationRepository.deleteAll(notifications);
+
+        // 3. Deletar UserBadges
+        List<UserBadge> userBadges = userBadgeRepository.findByUserId(childId);
+        userBadgeRepository.deleteAll(userBadges);
+
+        // 4. Deletar Redemptions
+        List<Redemption> redemptions = redemptionRepository.findByChildId(childId);
+        redemptionRepository.deleteAll(redemptions);
+
+        // 5. Deletar TaskAssignments
+        List<TaskAssignment> taskAssignments = taskAssignmentRepository.findByAssignedToChildId(childId);
+        taskAssignmentRepository.deleteAll(taskAssignments);
+
+        // 6. Deletar Transactions (depende do Wallet)
+        Wallet wallet = walletRepository.findByChildId(childId).orElse(null);
+        if (wallet != null) {
+            List<Transaction> transactions = transactionRepository.findByWalletIdOrderByCreatedAtDesc(wallet.getId());
+            transactionRepository.deleteAll(transactions);
+            walletRepository.delete(wallet);
+        }
+
+        // 7. Deletar Savings
+        Savings savings = savingsRepository.findByChildId(childId).orElse(null);
+        if (savings != null) {
+            savingsRepository.delete(savings);
+        }
+
+        // 8. Deletar UserXP
+        UserXP userXP = userXPRepository.findByUserId(childId).orElse(null);
+        if (userXP != null) {
+            userXPRepository.delete(userXP);
+        }
+
+        // 9. Finalmente, deletar o User
+        userRepository.delete(child);
+    }
+
     // Obtém o usuário autenticado
     private User getAuthenticatedUser() {
         String emailOrUsername = SecurityContextHolder.getContext().getAuthentication().getName();
 
         // Tenta buscar por email primeiro (PARENT), depois por username (CHILD)
-        return userRepository.findByEmail(emailOrUsername)
-                .orElseGet(() -> userRepository.findByUsername(emailOrUsername)
+        // USA MÉTODOS COM JOIN FETCH para evitar LazyInitializationException
+        return userRepository.findByEmailWithFamily(emailOrUsername)
+                .orElseGet(() -> userRepository.findByUsernameWithFamily(emailOrUsername)
                         .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado")));
     }
 }

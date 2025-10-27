@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")
@@ -33,5 +34,16 @@ public class UserController {
     public ResponseEntity<List<UserResponse>> getChildren() {
         List<UserResponse> children = userService.getChildren();
         return ResponseEntity.ok(children);
+    }
+
+    /**
+     * Deleta uma criança e todos os dados relacionados (apenas PARENT)
+     * Deleta: RefreshTokens, Notifications, UserBadges, Redemptions,
+     * TaskAssignments, Transactions, Wallet, Savings, UserXP e User
+     */
+    @DeleteMapping("/children/{childId}")
+    public ResponseEntity<Void> deleteChild(@PathVariable UUID childId) {
+        userService.deleteChild(childId);
+        return ResponseEntity.noContent().build();
     }
 }
