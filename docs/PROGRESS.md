@@ -1596,7 +1596,58 @@ ALTER TABLE tasks ADD COLUMN recurrence_end_date DATE;
 
 ---
 
-**Última atualização:** 27/10/2025 - Tarefas Recorrentes + Endpoint Retry
+## 🔧 CORREÇÃO DE BUG - 02/11/2025
+
+### ✅ Correção: LazyInitializationException no SavingsService
+
+**Problema Identificado:**
+Ao acessar a tela de poupança no mobile, erro 500:
+```
+LazyInitializationException: could not initialize proxy [User#...] - no Session
+```
+
+**Causa Raiz:**
+O método `SavingsService.getSavings()` estava **sem @Transactional**, causando erro ao acessar relacionamentos lazy (como `user.getFamily()`) no método `validateAccess()`.
+
+**Solução Aplicada:**
+```java
+@Transactional(readOnly = true)  // ← ADICIONADO
+public SavingsResponse getSavings(UUID childId, User requestingUser) {
+    validateAccess(childId, requestingUser);
+    // ...
+}
+```
+
+**Arquivo modificado:**
+- `SavingsService.java:115` - Adicionado `@Transactional(readOnly = true)`
+
+---
+
+### 📚 Sobre LazyInitializationException
+
+**O que é:**
+Erro que ocorre quando o Hibernate tenta acessar um relacionamento lazy (`@ManyToOne`, `@OneToOne` com `FetchType.LAZY`) **fora de uma transação ativa**.
+
+**Por que acontece:**
+- Relacionamentos lazy são proxies que só carregam dados quando acessados
+- Sem transação ativa, não há sessão do Hibernate para buscar os dados
+- Erro comum em métodos que retornam DTOs sem `@Transactional`
+
+**Solução:**
+Sempre adicionar `@Transactional(readOnly = true)` em métodos de leitura que:
+- Retornam DTOs
+- Acessam relacionamentos lazy direta ou indiretamente
+- São chamados por controllers REST
+
+**Ocorrências anteriores corrigidas:**
+1. `TaskService.getTasks()` - Linha 1042 (PROGRESS.md)
+2. `SecurityHelper.getAuthenticatedUser()` - Linha 1127
+3. `UserRepository`, `RewardRepository`, `WalletRepository` - Adicionado JOIN FETCH (Linha 1373-1422)
+4. `SavingsService.getSavings()` - **AGORA** (02/11/2025)
+
+---
+
+**Última atualização:** 02/11/2025 - Correção LazyInitializationException em Savings
 **Status:** ✅ **Sistema 100% FUNCIONAL**
 **Compilação:** 94 arquivos | BUILD SUCCESS
 **Próximas features:** Aguardando requisitos do frontend

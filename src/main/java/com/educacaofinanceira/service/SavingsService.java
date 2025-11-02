@@ -112,6 +112,7 @@ public class SavingsService {
     /**
      * Busca dados da poupança
      */
+    @Transactional(readOnly = true)
     public SavingsResponse getSavings(UUID childId, User requestingUser) {
         validateAccess(childId, requestingUser);
 
