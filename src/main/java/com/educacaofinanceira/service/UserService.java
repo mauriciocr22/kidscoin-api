@@ -178,6 +178,15 @@ public class UserService {
         userRepository.delete(child);
     }
 
+    // Atualiza o avatar do usuário autenticado (PARENT ou CHILD)
+    @Transactional
+    public UserResponse updateAvatar(String avatarUrl) {
+        User user = getAuthenticatedUser();
+        user.setAvatarUrl(avatarUrl);
+        user = userRepository.save(user);
+        return UserResponse.fromUser(user);
+    }
+
     // Obtém o usuário autenticado
     private User getAuthenticatedUser() {
         String emailOrUsername = SecurityContextHolder.getContext().getAuthentication().getName();

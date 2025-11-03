@@ -1,6 +1,7 @@
 package com.educacaofinanceira.controller;
 
 import com.educacaofinanceira.dto.request.CreateChildRequest;
+import com.educacaofinanceira.dto.request.UpdateAvatarRequest;
 import com.educacaofinanceira.dto.response.UserResponse;
 import com.educacaofinanceira.service.UserService;
 import jakarta.validation.Valid;
@@ -45,5 +46,14 @@ public class UserController {
     public ResponseEntity<Void> deleteChild(@PathVariable UUID childId) {
         userService.deleteChild(childId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Atualiza o avatar do usuário autenticado (PARENT ou CHILD)
+     */
+    @PatchMapping("/avatar")
+    public ResponseEntity<UserResponse> updateAvatar(@Valid @RequestBody UpdateAvatarRequest request) {
+        UserResponse user = userService.updateAvatar(request.getAvatarUrl());
+        return ResponseEntity.ok(user);
     }
 }
