@@ -1,4 +1,4 @@
-# KidsCoins API - Backend Parte 1
+# KidsCoins API - Backend
 
 Sistema de educação financeira infantil gamificada - API REST
 
