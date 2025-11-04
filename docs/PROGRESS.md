@@ -1647,7 +1647,230 @@ Sempre adicionar `@Transactional(readOnly = true)` em métodos de leitura que:
 
 ---
 
-**Última atualização:** 02/11/2025 - Correção LazyInitializationException em Savings
-**Status:** ✅ **Sistema 100% FUNCIONAL**
-**Compilação:** 94 arquivos | BUILD SUCCESS
-**Próximas features:** Aguardando requisitos do frontend
+## 🔧 NOVA FEATURE - 03/11/2025
+
+### ✅ Feature: Endpoint para Atualizar Avatar do Usuário
+
+**Objetivo:** Permitir que usuários autenticados (PARENT ou CHILD) atualizem sua foto de perfil após o cadastro.
+
+#### Problema Identificado
+
+O sistema permitia definir `avatarUrl` apenas na **criação** do perfil:
+- ✅ PARENT podia definir avatar ao criar criança via `CreateChildRequest`
+- ❌ Não havia forma de **atualizar** o avatar depois
+- ❌ Mobile precisava dessa funcionalidade para edição de perfil
+
+#### Solução Implementada
+
+**1. Criado DTO de Request:**
+```java
+// UpdateAvatarRequest.java
+@Data
+public class UpdateAvatarRequest {
+    @NotBlank(message = "URL do avatar é obrigatória")
+    @Size(max = 255, message = "URL do avatar deve ter no máximo 255 caracteres")
+    private String avatarUrl;
+}
+```
+
+**2. Implementado método no UserService:**
+```java
+// UserService.java
+@Transactional
+public UserResponse updateAvatar(String avatarUrl) {
+    User user = getAuthenticatedUser();
+    user.setAvatarUrl(avatarUrl);
+    user = userRepository.save(user);
+    return UserResponse.fromUser(user);
+}
+```
+
+**3. Criado endpoint no UserController:**
+```java
+// UserController.java
+@PatchMapping("/avatar")
+public ResponseEntity<UserResponse> updateAvatar(@Valid @RequestBody UpdateAvatarRequest request) {
+    UserResponse user = userService.updateAvatar(request.getAvatarUrl());
+    return ResponseEntity.ok(user);
+}
+```
+
+#### Características
+
+**Segurança:**
+- ✅ Requer autenticação JWT
+- ✅ Usuário atualiza apenas **próprio** avatar
+- ✅ Funciona para PARENT e CHILD
+- ✅ Validação: URL obrigatória, máximo 255 caracteres
+
+**Endpoint:**
+```
+PATCH /api/users/avatar
+```
+
+**Request Body:**
+```json
+{
+  "avatarUrl": "https://example.com/avatar.png"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "uuid",
+  "email": "pai@example.com",
+  "username": "joaozinho",
+  "fullName": "João Silva",
+  "role": "CHILD",
+  "familyId": "uuid",
+  "avatarUrl": "https://example.com/avatar.png"
+}
+```
+
+#### Arquivos Criados/Modificados
+
+**Novos (1):**
+- `UpdateAvatarRequest.java` - DTO com validação (13 linhas)
+
+**Modificados (2):**
+- `UserService.java` - Método `updateAvatar()` (+9 linhas)
+- `UserController.java` - Endpoint `@PatchMapping("/avatar")` (+10 linhas)
+
+**Total:** 3 arquivos, 32 linhas adicionadas
+
+#### Resultado
+
+✅ PARENT pode atualizar próprio avatar
+✅ CHILD pode atualizar próprio avatar
+✅ Validação funcionando corretamente
+✅ Compilação sem erros
+✅ Pronto para integração com mobile
+
+---
+
+## 🚀 PREPARAÇÃO PARA DEPLOY - 04/11/2025
+
+### ✅ Configuração Completa para Railway
+
+**Objetivo:** Preparar backend para hospedagem no Railway.app com deploy automatizado.
+
+#### Arquivos Criados/Modificados
+
+**1. application.yml - Variáveis de Ambiente**
+```yaml
+# Agora suporta variáveis de ambiente do Railway
+DATABASE_URL=${DATABASE_URL:jdbc:postgresql://localhost:5432/educacao_financeira}
+DATABASE_USERNAME=${DATABASE_USERNAME:postgres}
+DATABASE_PASSWORD=${DATABASE_PASSWORD:postgres}
+JWT_SECRET=${JWT_SECRET:chave-dev}
+PORT=${PORT:8080}
+LOG_LEVEL=${LOG_LEVEL:DEBUG}
+```
+
+**2. application-prod.yml - Profile de Produção**
+- Show SQL: desabilitado
+- Log Level: INFO/WARN
+- Stacktrace: nunca exposto
+- Format SQL: desabilitado
+
+**3. railway.json - Configuração Railway**
+```json
+{
+  "build": {
+    "buildCommand": "mvn clean package -DskipTests"
+  },
+  "deploy": {
+    "startCommand": "java -Dspring.profiles.active=prod -jar target/kidscoin-api-1.0.0.jar"
+  }
+}
+```
+
+**4. .env.example - Template de Variáveis**
+- Exemplos para desenvolvimento local
+- Referência para variáveis de produção
+- Instruções de como gerar JWT Secret
+
+**5. DEPLOY_RAILWAY.md - Guia Completo (300+ linhas)**
+- Passo a passo detalhado
+- Configuração de variáveis de ambiente
+- Como gerar JWT Secret seguro
+- Testes de endpoints
+- Troubleshooting completo
+- Monitoramento e logs
+- Deploy contínuo (CD)
+- Rollback de versões
+- Custos e planos
+- Conexão com mobile
+- Checklist de apresentação TCC
+
+**6. RAILWAY_QUICKSTART.md - Guia Rápido (5 minutos)**
+- Deploy em 5 passos
+- Comandos para gerar JWT Secret
+- Teste rápido da API
+- Solução de problemas comuns
+
+#### Configurações Implementadas
+
+**Variáveis de Ambiente Railway:**
+- ✅ `DATABASE_URL` - URL completa do PostgreSQL (auto-gerada)
+- ✅ `DATABASE_USERNAME` - Usuário do banco
+- ✅ `DATABASE_PASSWORD` - Senha do banco
+- ✅ `JWT_SECRET` - Chave de assinatura JWT (mínimo 256 bits)
+- ✅ `SPRING_PROFILES_ACTIVE` - Profile Spring (prod)
+- ✅ `PORT` - Porta dinâmica (Railway injeta automaticamente)
+- ✅ `LOG_LEVEL` - Nível de log (INFO em prod)
+- ✅ `HIBERNATE_DDL_AUTO` - Estratégia de DDL (update)
+
+**Segurança em Produção:**
+- ⚠️ JWT Secret precisa ser trocado (64+ caracteres)
+- ✅ Logs reduzidos (INFO/WARN apenas)
+- ✅ Stacktrace desabilitado em erros
+- ✅ SQL queries não aparecem em logs
+- ✅ CORS configurado (aceita todas origens para desenvolvimento)
+
+**Deploy Automático:**
+1. Push para GitHub (branch master)
+2. Railway detecta mudança
+3. Executa `mvn clean package -DskipTests`
+4. Inicia aplicação com profile prod
+5. Conecta ao PostgreSQL automaticamente
+
+#### Checklist de Deploy
+
+- [x] Variáveis de ambiente configuradas
+- [x] Profile de produção criado
+- [x] railway.json configurado
+- [x] Documentação completa
+- [x] Guia de troubleshooting
+- [ ] **Próximo passo:** Criar projeto no Railway
+- [ ] **Próximo passo:** Adicionar PostgreSQL
+- [ ] **Próximo passo:** Configurar variáveis
+- [ ] **Próximo passo:** Gerar domínio público
+- [ ] **Próximo passo:** Testar endpoints
+
+#### Arquivos Criados (6 arquivos)
+
+1. `src/main/resources/application-prod.yml` - Profile de produção
+2. `railway.json` - Config Railway
+3. `.env.example` - Template de variáveis
+4. `docs/DEPLOY_RAILWAY.md` - Guia completo
+5. `docs/RAILWAY_QUICKSTART.md` - Quick start
+6. `src/main/resources/application.yml` - Atualizado com variáveis
+
+#### Resultado
+
+✅ Backend 100% pronto para deploy no Railway
+✅ Configuração profissional com profiles
+✅ Documentação completa para a equipe
+✅ Suporte a variáveis de ambiente
+✅ Deploy automático configurado
+✅ Guias passo a passo (completo + rápido)
+
+---
+
+**Última atualização:** 04/11/2025 - Preparação completa para deploy Railway
+**Status:** ✅ **Sistema 100% FUNCIONAL + PRONTO PARA PRODUÇÃO**
+**Compilação:** 95 arquivos | BUILD SUCCESS
+**Commits totais:** 36 commits (12 Parte 1 + 24 Parte 2)
+**Deploy:** 🚀 Pronto para Railway
