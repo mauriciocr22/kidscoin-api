@@ -1,9 +1,11 @@
 package com.educacaofinanceira.controller;
 
+import com.educacaofinanceira.dto.request.UnlockBadgeDebugRequest;
 import com.educacaofinanceira.dto.response.GamificationResponse;
 import com.educacaofinanceira.model.User;
 import com.educacaofinanceira.service.GamificationService;
 import com.educacaofinanceira.util.SecurityHelper;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -32,5 +34,18 @@ public class GamificationController {
 
         GamificationResponse gamification = gamificationService.getGamification(targetChildId, user);
         return ResponseEntity.ok(gamification);
+    }
+
+    /**
+     * 🔧 DEBUG: Desbloqueia uma badge manualmente para testes
+     * ⚠️ REMOVER ANTES DE PRODUÇÃO FINAL!
+     *
+     * POST /api/gamification/debug/unlock
+     * Body: { "username": "joaozinho", "badgeName": "Primeira Tarefa" }
+     */
+    @PostMapping("/debug/unlock")
+    public ResponseEntity<String> unlockBadgeDebug(@Valid @RequestBody UnlockBadgeDebugRequest request) {
+        String result = gamificationService.unlockBadgeForTest(request.getUsername(), request.getBadgeName());
+        return ResponseEntity.ok(result);
     }
 }

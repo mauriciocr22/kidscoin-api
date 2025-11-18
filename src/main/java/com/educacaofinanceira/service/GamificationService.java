@@ -11,6 +11,7 @@ import com.educacaofinanceira.model.enums.NotificationType;
 import com.educacaofinanceira.model.enums.ReferenceType;
 import com.educacaofinanceira.repository.BadgeRepository;
 import com.educacaofinanceira.repository.UserBadgeRepository;
+import com.educacaofinanceira.repository.UserRepository;
 import com.educacaofinanceira.repository.UserXPRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,7 @@ public class GamificationService {
     private final UserXPRepository userXPRepository;
     private final BadgeRepository badgeRepository;
     private final UserBadgeRepository userBadgeRepository;
+    private final UserRepository userRepository;
     private final BadgeService badgeService;
     private final NotificationService notificationService;
 
@@ -127,6 +129,60 @@ public class GamificationService {
             totalXP += i * 100 + (i - 1) * 50;
         }
         return totalXP;
+    }
+
+    /**
+     * 🔧 DEBUG: Desbloqueia uma badge manualmente para testes
+     * ⚠️ REMOVER ANTES DE PRODUÇÃO FINAL!
+     */
+    @Transactional
+    public String unlockBadgeForTest(String username, String badgeName) {
+        // Buscar criança pelo username
+        User child = userRepository.findByUsername(username)
+                .orElse(null);
+
+        if (child == null) {
+            return "❌ Criança não encontrada com username: " + username;
+        }
+
+        // Buscar badge pelo nome
+        List<Badge> allBadges = badgeRepository.findAll();
+        Badge targetBadge = allBadges.stream()
+                .filter(b -> b.getName().equalsIgnoreCase(badgeName))
+                .findFirst()
+                .orElse(null);
+
+        if (targetBadge == null) {
+            return "❌ Badge não encontrada: " + badgeName + ". Badges disponíveis: " +
+                   allBadges.stream().map(Badge::getName).collect(Collectors.joining(", "));
+        }
+
+        // Verificar se já possui a badge
+        boolean alreadyHas = userBadgeRepository.existsByUserIdAndBadgeId(child.getId(), targetBadge.getId());
+        if (alreadyHas) {
+            return "⚠️ Criança já possui a badge: " + badgeName;
+        }
+
+        // Desbloquear badge
+        UserBadge userBadge = new UserBadge();
+        userBadge.setUser(child);
+        userBadge.setBadge(targetBadge);
+        userBadge.setUnlockedAt(LocalDateTime.now());
+        userBadgeRepository.save(userBadge);
+
+        // Adicionar XP bônus da badge
+        if (targetBadge.getXpBonus() != null && targetBadge.getXpBonus() > 0) {
+            addXP(child.getId(), targetBadge.getXpBonus(), "Bônus da badge: " + badgeName);
+        }
+
+        // Criar notificação
+        notificationService.create(child.getId(), NotificationType.BADGE_UNLOCKED,
+                "Nova conquista desbloqueada!",
+                "Você desbloqueou: " + targetBadge.getName(),
+                ReferenceType.TASK, targetBadge.getId());
+
+        return "✅ Badge '" + badgeName + "' desbloqueada com sucesso para " + child.getFullName() +
+               " (+" + targetBadge.getXpBonus() + " XP)!";
     }
 
     /**

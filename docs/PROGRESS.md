@@ -1869,8 +1869,153 @@ LOG_LEVEL=${LOG_LEVEL:DEBUG}
 
 ---
 
-**Última atualização:** 04/11/2025 - Preparação completa para deploy Railway
-**Status:** ✅ **Sistema 100% FUNCIONAL + PRONTO PARA PRODUÇÃO**
-**Compilação:** 95 arquivos | BUILD SUCCESS
-**Commits totais:** 36 commits (12 Parte 1 + 24 Parte 2)
-**Deploy:** 🚀 Pronto para Railway
+---
+
+## 🔧 FEATURE DE DEBUG - 18/11/2025
+
+### ✅ Endpoint Temporário: Desbloquear Badges Manualmente
+
+**Objetivo:** Facilitar testes e demonstração na banca do TCC, permitindo desbloquear badges rapidamente sem precisar acesso SQL ao Railway.
+
+#### Problema Identificado
+
+- Railway não possui interface de query SQL integrada
+- Difícil acessar banco de dados remotamente para testes
+- Necessidade de demonstrar sistema de badges funcionando na apresentação
+
+#### Solução Implementada
+
+**1. Endpoint de Debug** (`POST /api/gamification/debug/unlock`)
+
+```java
+// GamificationController.java
+@PostMapping("/debug/unlock")
+public ResponseEntity<String> unlockBadgeDebug(@Valid @RequestBody UnlockBadgeDebugRequest request)
+```
+
+**Request Body:**
+```json
+{
+  "username": "joaozinho",
+  "badgeName": "Primeira Tarefa"
+}
+```
+
+**Funcionalidades:**
+- ✅ Busca criança pelo username
+- ✅ Busca badge pelo nome (case-insensitive)
+- ✅ Verifica se já possui a badge (evita duplicatas)
+- ✅ Desbloqueia badge manualmente
+- ✅ Adiciona XP bônus automaticamente
+- ✅ Cria notificação no app
+- ✅ Pode causar level up
+- ❌ Não requer autenticação JWT (facilita testes)
+
+**Respostas possíveis:**
+```
+✅ Badge 'Primeira Tarefa' desbloqueada com sucesso para João Silva (+25 XP)!
+⚠️ Criança já possui a badge: Primeira Tarefa
+❌ Criança não encontrada com username: joaozinho
+❌ Badge não encontrada: Primeira. Badges disponíveis: ...
+```
+
+**2. Service Layer** (`GamificationService.unlockBadgeForTest()`)
+
+Método transacional que:
+1. Busca usuário por username
+2. Busca badge por nome
+3. Valida se já possui
+4. Cria registro `UserBadge`
+5. Adiciona XP bônus (chama `addXP()`)
+6. Cria notificação
+7. Retorna mensagem de sucesso/erro
+
+**3. Scripts Automatizados**
+
+**PowerShell** (`scripts/unlock-all-badges.ps1`):
+```powershell
+.\unlock-all-badges.ps1 -Username "joaozinho" -ApiUrl "https://sua-api.railway.app"
+```
+
+**Bash** (`scripts/unlock-all-badges.sh`):
+```bash
+./unlock-all-badges.sh joaozinho https://sua-api.railway.app
+```
+
+**O que os scripts fazem:**
+- Desbloqueiam **TODAS as 8 badges** automaticamente
+- Adiciona **+725 XP total** (soma dos bônus)
+- Mostra progresso em tempo real
+- Exibe resumo ao final (sucessos/falhas/XP ganho)
+
+#### Arquivos Criados (5 arquivos)
+
+1. `UnlockBadgeDebugRequest.java` - DTO de request (18 linhas)
+2. `GamificationService.java` - Método `unlockBadgeForTest()` (+53 linhas)
+3. `GamificationController.java` - Endpoint `/debug/unlock` (+13 linhas)
+4. `scripts/unlock-all-badges.ps1` - Script PowerShell (72 linhas)
+5. `scripts/unlock-all-badges.sh` - Script Bash (56 linhas)
+
+#### Documentação
+
+1. `docs/DEBUG_UNLOCK_BADGES.md` - Guia completo de uso (180 linhas)
+2. `scripts/README.md` - Instruções dos scripts (120 linhas)
+
+#### Exemplo de Uso
+
+**Desbloquear 1 badge via Postman:**
+```
+POST https://kidscoin-api.up.railway.app/api/gamification/debug/unlock
+Content-Type: application/json
+
+{
+  "username": "maria",
+  "badgeName": "Milionário"
+}
+```
+
+**Desbloquear TODAS via script:**
+```powershell
+cd scripts
+.\unlock-all-badges.ps1 -Username "maria" -ApiUrl "https://kidscoin-api.up.railway.app"
+```
+
+**Resultado no mobile:**
+- 8 badges desbloqueadas ✅
+- 8 notificações criadas 🔔
+- +725 XP ganho ✨
+- Possível level up 📈
+
+#### ⚠️ Lembrete de Produção
+
+**Antes da entrega final do TCC:**
+
+Remover/comentar:
+- [ ] `UnlockBadgeDebugRequest.java`
+- [ ] Endpoint `@PostMapping("/debug/unlock")`
+- [ ] Método `unlockBadgeForTest()`
+- [ ] Pasta `scripts/`
+- [ ] `docs/DEBUG_UNLOCK_BADGES.md`
+
+Ou simplesmente comentar o endpoint:
+```java
+// @PostMapping("/debug/unlock")
+```
+
+#### Compilação
+
+```
+[INFO] Compiling 96 source files
+[INFO] BUILD SUCCESS
+```
+
+✅ Projeto compila sem erros
+
+---
+
+**Última atualização:** 18/11/2025 - Feature de debug para desbloquear badges
+**Status:** ✅ **Sistema 100% FUNCIONAL + PRONTO PARA DEMONSTRAÇÃO**
+**Compilação:** 96 arquivos | BUILD SUCCESS
+**Commits totais:** 39 commits (12 Parte 1 + 27 Parte 2)
+**Deploy:** 🚀 Pronto para Railway + Endpoint de debug ativo
+**GitHub:** ⏳ Aguardando commit
