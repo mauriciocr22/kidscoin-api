@@ -41,6 +41,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll() // Permite endpoints de auth sem autenticação
+                        .requestMatchers("/api/gamification/debug/**").permitAll() // DEBUG: Permite desbloquear badges sem auth
                         .anyRequest().authenticated() // Todo resto requer autenticação
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
